@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -m pip install:*)",
+      "Bash(npm install)",
+      "Bash(python3:*)",
+      "Bash(source venv/bin/activate)",
+      "Bash(pip install:*)",
+      "Bash(curl:*)",
+      "Bash(SESSION_ID=\"a812c9ac-f933-42a3-abae-eae1a3e01de0\":*)",
+      "Bash(python:*)",
+      "Bash(lsof:*)",
+      "Bash(npx vite build)",
+      "Bash(node --version:*)",
+      "Bash(npm:*)",
+      "Bash(git init:*)",
+      "Bash(git add:*)"
+    ]
+  }
+}
