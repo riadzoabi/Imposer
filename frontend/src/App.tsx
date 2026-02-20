@@ -147,11 +147,11 @@ function App() {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       {/* Header */}
-      <header className="bg-brand-navy px-5 py-2.5 flex items-center justify-between">
+      <header className="bg-white border-b border-gray-200 px-5 py-2.5 flex items-center justify-between">
         <div className="flex items-center gap-2.5">
           <LogoMark />
           <div>
-            <h1 className="text-base font-bold text-white tracking-tight leading-tight">Print Imposition</h1>
+            <h1 className="text-base font-bold text-brand-navy tracking-tight leading-tight">Print Imposition</h1>
             {filename && (
               <span className="text-[11px] text-gray-400 leading-tight">
                 {filename}
@@ -160,7 +160,7 @@ function App() {
           </div>
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="text-[11px] text-gray-400 mr-1">Units:</span>
+          <span className="text-[11px] text-gray-500 mr-1">Units:</span>
           {(['mm', 'inches', 'points'] as UnitSystem[]).map(u => (
             <button
               key={u}
@@ -168,7 +168,7 @@ function App() {
               className={`px-2.5 py-1 text-[11px] rounded-md font-medium transition-all ${
                 unit === u
                   ? 'bg-brand-cyan text-white'
-                  : 'bg-white/10 text-gray-300 hover:bg-white/20'
+                  : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
               }`}
             >
               {u}
