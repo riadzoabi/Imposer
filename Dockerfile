@@ -23,5 +23,6 @@ COPY --from=frontend-build /app/frontend/dist ./frontend/dist
 # Expose port
 EXPOSE 8000
 
-# Run the app
-CMD uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8000}
+# Run the app from the backend directory so relative imports work
+WORKDIR /app/backend
+CMD uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}
