@@ -199,6 +199,20 @@ async def preview_imposition(session_id: str, config: ImpositionConfig):
     }
 
 
+@app.get("/api/pdf/{session_id}")
+async def get_pdf(session_id: str):
+    """Serve the uploaded PDF bytes so the frontend can render thumbnails."""
+    if session_id not in _sessions:
+        raise HTTPException(404, "Session not found.")
+
+    session = _sessions[session_id]
+    return StreamingResponse(
+        io.BytesIO(session["pdf_bytes"]),
+        media_type="application/pdf",
+        headers={"Cache-Control": "private, max-age=3600"},
+    )
+
+
 @app.post("/api/impose")
 async def impose_pdf(session_id: str, config: ImpositionConfig):
     """Run full imposition pipeline and return imposed PDF."""
