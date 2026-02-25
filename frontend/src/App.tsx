@@ -1,8 +1,9 @@
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import UploadZone from './components/UploadZone';
 import PageGeometryPanel from './components/PageGeometryPanel';
 import ImpositionSettings from './components/ImpositionSettings';
 import SheetPreview from './components/SheetPreview';
+import SheetNavigator from './components/SheetNavigator';
 import MarkSettings from './components/MarkSettings';
 import ExportPanel from './components/ExportPanel';
 
@@ -73,6 +74,7 @@ function App() {
   const [error, setError] = useState('');
   const [showBleed, setShowBleed] = useState(true);
   const [showMarks, setShowMarks] = useState(true);
+  const [currentSheet, setCurrentSheet] = useState(0); // 0-based
 
   const pdfUrl = useMemo(
     () => (sessionId ? `/api/pdf/${sessionId}` : null),
@@ -100,26 +102,35 @@ function App() {
     }
   }, []);
 
+  // Reset sheet to 0 when config changes (layout may change)
+  const prevConfigRef = useRef(config);
+  useEffect(() => {
+    if (prevConfigRef.current !== config) {
+      prevConfigRef.current = config;
+      setCurrentSheet(0);
+    }
+  }, [config]);
+
   const fetchPreview = useCallback(async () => {
     if (!sessionId) return;
     setLoading(true);
     setError('');
     try {
-      const data = await getPreview(sessionId, config);
+      const data = await getPreview(sessionId, config, currentSheet);
       setPreview(data);
     } catch (e: any) {
       setError(e.message);
     } finally {
       setLoading(false);
     }
-  }, [sessionId, config]);
+  }, [sessionId, config, currentSheet]);
 
   useEffect(() => {
     if (sessionId) {
       const timer = setTimeout(fetchPreview, 300);
       return () => clearTimeout(timer);
     }
-  }, [sessionId, config, fetchPreview]);
+  }, [sessionId, config, currentSheet, fetchPreview]);
 
   const updateConfig = useCallback((patch: Partial<ImpositionConfig>) => {
     setConfig(prev => ({ ...prev, ...patch }));
@@ -353,9 +364,11 @@ function App() {
                     <span className="text-gray-400">
                       {preview.layout?.rows}&times;{preview.layout?.cols}
                     </span>
-                    <span className="text-gray-400">
-                      {preview.layout?.total_sheets} sheet{preview.layout?.total_sheets !== 1 ? 's' : ''}
-                    </span>
+                    <SheetNavigator
+                      currentSheet={currentSheet + 1}
+                      totalSheets={preview.layout?.total_sheets ?? 1}
+                      onNavigate={(sheet) => setCurrentSheet(sheet - 1)}
+                    />
                   </div>
                 )}
               </div>

@@ -139,8 +139,12 @@ async def upload_pdf(file: UploadFile = File(...)):
 
 
 @app.post("/api/preview")
-async def preview_imposition(session_id: str, config: ImpositionConfig):
-    """Calculate and return layout preview data."""
+async def preview_imposition(session_id: str, config: ImpositionConfig, sheet_number: int = 0):
+    """Calculate and return layout preview data.
+
+    Args:
+        sheet_number: 0-based sheet index to preview.
+    """
     if session_id not in _sessions:
         raise HTTPException(404, "Session not found. Please re-upload the PDF.")
 
@@ -159,7 +163,7 @@ async def preview_imposition(session_id: str, config: ImpositionConfig):
             trim_h = analysis.pages[0].media_box.height
 
     try:
-        layout = calculate_imposition_layout(config, analysis.page_count)
+        layout = calculate_imposition_layout(config, analysis.page_count, sheet_number)
     except Exception as e:
         raise HTTPException(400, str(e))
 
@@ -176,10 +180,11 @@ async def preview_imposition(session_id: str, config: ImpositionConfig):
         config.gap_between_items, eff_trim_w, eff_trim_h,
     )
 
+    # sheet_number is 0-based internally; marks display 1-based
     marks = place_all_marks(
         grid, layout, config.marks, config.bleed, config.sheet,
         eff_trim_w, eff_trim_h,
-        session["filename"], 1, layout.total_sheets,
+        session["filename"], sheet_number + 1, layout.total_sheets,
     )
 
     sheet_w = config.sheet.sheet_width
@@ -196,6 +201,7 @@ async def preview_imposition(session_id: str, config: ImpositionConfig):
         "effective_trim_w": eff_trim_w,
         "effective_trim_h": eff_trim_h,
         "page_count": analysis.page_count,
+        "sheet_number": sheet_number,
     }
 
 
