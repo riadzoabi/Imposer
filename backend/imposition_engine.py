@@ -8,9 +8,15 @@ from models import (
 
 
 def calculate_imposition_layout(
-    config: ImpositionConfig, page_count: int
+    config: ImpositionConfig, page_count: int, sheet_number: int = 0
 ) -> ImpositionLayout:
-    """Calculate how many items fit on the sheet and build the grid."""
+    """Calculate how many items fit on the sheet and build the grid.
+
+    Args:
+        config: Imposition configuration.
+        page_count: Total number of pages in the source PDF.
+        sheet_number: 0-based sheet index to generate the grid for.
+    """
 
     sheet_w = config.sheet.sheet_width
     sheet_h = config.sheet.sheet_height
@@ -56,9 +62,6 @@ def calculate_imposition_layout(
 
     n_up = best_cols * best_rows
 
-    # Build grid based on mode
-    grid = _build_grid(config.mode, best_rows, best_cols, page_count, rotation)
-
     # Calculate total sheets needed
     cells_per_sheet = n_up
     if config.duplex:
@@ -70,6 +73,15 @@ def calculate_imposition_layout(
         total_sheets = 1
     else:
         total_sheets = max(1, math.ceil(page_count / pages_per_sheet))
+
+    # Clamp sheet_number
+    sheet_number = max(0, min(sheet_number, total_sheets - 1))
+
+    # Build grid based on mode for the requested sheet
+    grid = _build_grid(
+        config.mode, best_rows, best_cols, page_count, rotation,
+        sheet_number=sheet_number, n_up=n_up,
+    )
 
     return ImpositionLayout(
         rows=best_rows,
@@ -128,8 +140,15 @@ def _build_grid(
     cols: int,
     page_count: int,
     rotation: int,
+    sheet_number: int = 0,
+    n_up: int = 0,
 ) -> list[GridCell]:
-    """Build the grid of cells based on imposition mode."""
+    """Build the grid of cells based on imposition mode.
+
+    Args:
+        sheet_number: 0-based sheet index.
+        n_up: cells per sheet (rows * cols).
+    """
 
     grid: list[GridCell] = []
 
@@ -141,7 +160,7 @@ def _build_grid(
                 )
 
     elif mode == ImpositionMode.cut_and_stack:
-        cursor = 0
+        cursor = sheet_number * n_up
         for r in range(rows):
             for c in range(cols):
                 if cursor < page_count:
@@ -153,11 +172,10 @@ def _build_grid(
                     grid.append(GridCell(row=r, col=c, page_index=None, rotation=rotation))
 
     elif mode == ImpositionMode.booklet_saddle_stitch:
-        grid = _build_saddle_stitch_grid(rows, cols, page_count, rotation)
+        grid = _build_saddle_stitch_grid(rows, cols, page_count, rotation, sheet_number)
 
     elif mode == ImpositionMode.booklet_perfect_bind:
-        # Perfect bind: sequential pages, 2-up
-        cursor = 0
+        cursor = sheet_number * n_up
         for r in range(rows):
             for c in range(cols):
                 if cursor < page_count:
@@ -172,7 +190,8 @@ def _build_grid(
 
 
 def _build_saddle_stitch_grid(
-    rows: int, cols: int, page_count: int, rotation: int
+    rows: int, cols: int, page_count: int, rotation: int,
+    sheet_number: int = 0,
 ) -> list[GridCell]:
     """Build saddle-stitch signature page ordering."""
     # Round up to multiple of 4
@@ -182,10 +201,10 @@ def _build_saddle_stitch_grid(
     # For a 2-up layout (cols=2), each sheet side has 2 pages
     sheets = []
     for i in range(total // 4):
-        front_left = total - (2 * i) - 1  # e.g., 16, 14, 12, 10 (0-indexed: 15,13,11,9)
-        front_right = 2 * i  # e.g., 0, 2, 4, 6
-        back_left = 2 * i + 1  # e.g., 1, 3, 5, 7
-        back_right = total - (2 * i) - 2  # e.g., 14, 12, 10, 8
+        front_left = total - (2 * i) - 1
+        front_right = 2 * i
+        back_left = 2 * i + 1
+        back_right = total - (2 * i) - 2
 
         sheets.append(
             {
@@ -194,10 +213,11 @@ def _build_saddle_stitch_grid(
             }
         )
 
-    # Build grid from first sheet's front as default
+    # Pick the requested sheet (clamped)
     grid = []
     if sheets:
-        front_pages = sheets[0]["front"]
+        idx = max(0, min(sheet_number, len(sheets) - 1))
+        front_pages = sheets[idx]["front"]
         for i, pidx in enumerate(front_pages):
             col = i % cols
             row = i // cols

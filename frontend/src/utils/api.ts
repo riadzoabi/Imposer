@@ -11,8 +11,8 @@ export async function uploadPDF(file: File): Promise<any> {
   return res.json();
 }
 
-export async function getPreview(sessionId: string, config: any): Promise<any> {
-  const res = await fetch(`${BASE}/preview?session_id=${sessionId}`, {
+export async function getPreview(sessionId: string, config: any, sheetNumber: number = 0): Promise<any> {
+  const res = await fetch(`${BASE}/preview?session_id=${sessionId}&sheet_number=${sheetNumber}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(config),
