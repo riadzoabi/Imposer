@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { ImpositionConfig } from '../App';
+import type { ThumbnailMap } from '../hooks/usePdfThumbnails';
 
 interface Props {
   preview: any;
@@ -7,9 +8,10 @@ interface Props {
   showBleed: boolean;
   showMarks: boolean;
   loading: boolean;
+  thumbnails?: ThumbnailMap;
 }
 
-export default function SheetPreview({ preview, config, showBleed, showMarks, loading }: Props) {
+export default function SheetPreview({ preview, config, showBleed, showMarks, loading, thumbnails }: Props) {
   const [hoveredCell, setHoveredCell] = useState<number | null>(null);
   const [zoom, setZoom] = useState(1);
 
@@ -34,6 +36,17 @@ export default function SheetPreview({ preview, config, showBleed, showMarks, lo
           <filter id="sheetShadow" x="-2%" y="-2%" width="104%" height="104%">
             <feDropShadow dx="0.5" dy="0.5" stdDeviation="1" floodOpacity="0.15"/>
           </filter>
+          {/* Clip paths for each cell to clip thumbnails to trim area */}
+          {grid.map((cell: any, i: number) => {
+            if (cell.page_index === null || cell.page_index === undefined) return null;
+            const tx = cell.trim_origin_x;
+            const ty = sheetH - cell.trim_origin_y - trimH;
+            return (
+              <clipPath key={`clip-${i}`} id={`cell-clip-${i}`}>
+                <rect x={tx} y={ty} width={trimW} height={trimH} />
+              </clipPath>
+            );
+          })}
         </defs>
 
         {/* Sheet background */}
@@ -55,6 +68,8 @@ export default function SheetPreview({ preview, config, showBleed, showMarks, lo
 
           const tx = cell.trim_origin_x;
           const ty = sheetH - cell.trim_origin_y - trimH;
+          const pageIdx = cell.page_index || 0;
+          const thumb = thumbnails?.[pageIdx];
 
           const isHovered = hoveredCell === i;
 
@@ -76,29 +91,92 @@ export default function SheetPreview({ preview, config, showBleed, showMarks, lo
                 />
               )}
 
-              {/* Trim area */}
+              {/* Trim area background */}
               <rect
                 x={tx} y={ty}
                 width={trimW} height={trimH}
-                fill={isHovered ? 'rgba(18, 171, 240, 0.1)' : 'rgba(18, 171, 240, 0.03)'}
+                fill={thumb ? '#ffffff' : (isHovered ? 'rgba(18, 171, 240, 0.1)' : 'rgba(18, 171, 240, 0.03)')}
                 stroke={isHovered ? 'rgba(18, 171, 240, 0.8)' : 'rgba(18, 171, 240, 0.4)'}
                 strokeWidth={isHovered ? 0.4 : 0.2}
                 strokeDasharray={isHovered ? 'none' : '1.5 1'}
               />
 
-              {/* Page label */}
-              <text
-                x={tx + trimW / 2}
-                y={ty + trimH / 2}
-                textAnchor="middle"
-                dominantBaseline="middle"
-                fontSize={Math.min(trimW, trimH) * 0.15}
-                fill={isHovered ? '#12abf0' : '#9ca3af'}
-                fontFamily="Inter, sans-serif"
-                fontWeight={isHovered ? 600 : 400}
-              >
-                P{(cell.page_index || 0) + 1}
-              </text>
+              {/* Page thumbnail image */}
+              {thumb && (
+                <image
+                  href={thumb}
+                  x={tx}
+                  y={ty}
+                  width={trimW}
+                  height={trimH}
+                  preserveAspectRatio="xMidYMid slice"
+                  clipPath={`url(#cell-clip-${i})`}
+                  opacity={isHovered ? 0.85 : 1}
+                  style={{ pointerEvents: 'none' }}
+                />
+              )}
+
+              {/* Hover overlay */}
+              {isHovered && thumb && (
+                <rect
+                  x={tx} y={ty}
+                  width={trimW} height={trimH}
+                  fill="rgba(18, 171, 240, 0.08)"
+                  style={{ pointerEvents: 'none' }}
+                />
+              )}
+
+              {/* Trim border on top of image */}
+              {thumb && (
+                <rect
+                  x={tx} y={ty}
+                  width={trimW} height={trimH}
+                  fill="none"
+                  stroke={isHovered ? 'rgba(18, 171, 240, 0.8)' : 'rgba(18, 171, 240, 0.4)'}
+                  strokeWidth={isHovered ? 0.4 : 0.2}
+                  strokeDasharray={isHovered ? 'none' : '1.5 1'}
+                  style={{ pointerEvents: 'none' }}
+                />
+              )}
+
+              {/* Page label – shown as small badge when thumbnail exists, large text otherwise */}
+              {thumb ? (
+                <g style={{ pointerEvents: 'none' }}>
+                  <rect
+                    x={tx + 1}
+                    y={ty + 1}
+                    width={Math.min(trimW * 0.25, 14)}
+                    height={Math.min(trimH * 0.15, 5)}
+                    rx={0.8}
+                    fill="rgba(0,0,0,0.5)"
+                  />
+                  <text
+                    x={tx + 1 + Math.min(trimW * 0.25, 14) / 2}
+                    y={ty + 1 + Math.min(trimH * 0.15, 5) / 2}
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                    fontSize={Math.min(trimW, trimH) * 0.055}
+                    fill="#ffffff"
+                    fontFamily="Inter, sans-serif"
+                    fontWeight={600}
+                  >
+                    P{pageIdx + 1}
+                  </text>
+                </g>
+              ) : (
+                <text
+                  x={tx + trimW / 2}
+                  y={ty + trimH / 2}
+                  textAnchor="middle"
+                  dominantBaseline="middle"
+                  fontSize={Math.min(trimW, trimH) * 0.15}
+                  fill={isHovered ? '#12abf0' : '#9ca3af'}
+                  fontFamily="Inter, sans-serif"
+                  fontWeight={isHovered ? 600 : 400}
+                >
+                  P{pageIdx + 1}
+                </text>
+              )}
 
               {/* Interior edge indicators */}
               {cell.is_interior_edge?.right && (
@@ -177,7 +255,7 @@ export default function SheetPreview({ preview, config, showBleed, showMarks, lo
         })}
       </svg>
     );
-  }, [preview, config, showBleed, showMarks, hoveredCell]);
+  }, [preview, config, showBleed, showMarks, hoveredCell, thumbnails]);
 
   // Tooltip
   const tooltipContent = useMemo(() => {

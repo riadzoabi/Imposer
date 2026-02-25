@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import UploadZone from './components/UploadZone';
 import PageGeometryPanel from './components/PageGeometryPanel';
 import ImpositionSettings from './components/ImpositionSettings';
@@ -8,6 +8,7 @@ import ExportPanel from './components/ExportPanel';
 
 import { UnitSystem } from './utils/unitConversion';
 import { getPreview } from './utils/api';
+import { usePdfThumbnails } from './hooks/usePdfThumbnails';
 
 export interface BleedConfig {
   top: number; bottom: number; left: number; right: number; uniform: boolean;
@@ -72,6 +73,13 @@ function App() {
   const [error, setError] = useState('');
   const [showBleed, setShowBleed] = useState(true);
   const [showMarks, setShowMarks] = useState(true);
+
+  const pdfUrl = useMemo(
+    () => (sessionId ? `/api/pdf/${sessionId}` : null),
+    [sessionId],
+  );
+  const pageCount = analysis?.page_count ?? 0;
+  const { thumbnails } = usePdfThumbnails(pdfUrl, pageCount);
 
   const handleUpload = useCallback((data: any) => {
     setSessionId(data.session_id);
@@ -312,6 +320,7 @@ function App() {
                 showBleed={showBleed}
                 showMarks={showMarks}
                 loading={loading}
+                thumbnails={thumbnails}
               />
             )}
           </div>
