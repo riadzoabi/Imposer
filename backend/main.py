@@ -12,6 +12,7 @@ import io
 
 from models import (
     ImpositionConfig,
+    ImpositionLayout,
     AnalysisResult,
     PreviewData,
     PresetConfig,
@@ -19,9 +20,10 @@ from models import (
     BleedConfig,
     MarkConfig,
     SheetConfig,
+    GridCell,
 )
 from pdf_analyzer import analyze_pdf
-from imposition_engine import calculate_imposition_layout
+from imposition_engine import calculate_imposition_layout, get_saddle_stitch_sheets
 from bleed_manager import calculate_per_cell_bleed, calculate_cell_positions
 from mark_placer import place_all_marks
 from pdf_output import generate_imposed_pdf
@@ -139,17 +141,19 @@ async def upload_pdf(file: UploadFile = File(...)):
 
 
 @app.post("/api/preview")
-async def preview_imposition(session_id: str, config: ImpositionConfig, sheet_number: int = 0):
-    """Calculate and return layout preview data.
-
-    Args:
-        sheet_number: 0-based sheet index to preview.
-    """
+async def preview_imposition(
+    session_id: str,
+    config: ImpositionConfig,
+    sheet_number: int = 1,
+    side: str = "front",
+):
+    """Calculate and return layout preview data for a specific sheet/side."""
     if session_id not in _sessions:
         raise HTTPException(404, "Session not found. Please re-upload the PDF.")
 
     session = _sessions[session_id]
     analysis = session["analysis"]
+    page_count = analysis.page_count
 
     trim_w = config.trim_width
     trim_h = config.trim_height
@@ -163,7 +167,7 @@ async def preview_imposition(session_id: str, config: ImpositionConfig, sheet_nu
             trim_h = analysis.pages[0].media_box.height
 
     try:
-        layout = calculate_imposition_layout(config, analysis.page_count, sheet_number)
+        layout = calculate_imposition_layout(config, page_count)
     except Exception as e:
         raise HTTPException(400, str(e))
 
@@ -173,18 +177,24 @@ async def preview_imposition(session_id: str, config: ImpositionConfig, sheet_nu
         eff_trim_w = trim_h
         eff_trim_h = trim_w
 
-    grid = layout.grid
+    # Clamp sheet_number
+    sheet_number = max(1, min(sheet_number, layout.total_sheets))
+
+    # Build grid for the requested sheet and side
+    grid = _build_preview_grid(
+        config, layout, page_count, sheet_number, side, eff_trim_w, eff_trim_h,
+    )
+
     calculate_per_cell_bleed(grid, layout, config.bleed, config.gap_between_items)
     calculate_cell_positions(
         grid, layout, config.sheet, config.bleed,
         config.gap_between_items, eff_trim_w, eff_trim_h,
     )
 
-    # sheet_number is 0-based internally; marks display 1-based
     marks = place_all_marks(
         grid, layout, config.marks, config.bleed, config.sheet,
         eff_trim_w, eff_trim_h,
-        session["filename"], sheet_number + 1, layout.total_sheets,
+        session["filename"], sheet_number, layout.total_sheets,
     )
 
     sheet_w = config.sheet.sheet_width
@@ -200,9 +210,98 @@ async def preview_imposition(session_id: str, config: ImpositionConfig, sheet_nu
         "sheet_height_mm": sheet_h,
         "effective_trim_w": eff_trim_w,
         "effective_trim_h": eff_trim_h,
-        "page_count": analysis.page_count,
-        "sheet_number": sheet_number,
+        "page_count": page_count,
+        "current_sheet": sheet_number,
+        "current_side": side,
     }
+
+
+def _build_preview_grid(
+    config: ImpositionConfig,
+    layout: ImpositionLayout,
+    page_count: int,
+    sheet_number: int,
+    side: str,
+    eff_trim_w: float,
+    eff_trim_h: float,
+) -> list:
+    """Build the grid cells for a specific sheet number and side.
+
+    Returns a grid with correct page_index and row/col assignments.
+    Bleed and positions are calculated by the caller.
+    """
+    from models import FlipEdge
+
+    n_up = layout.n_up
+    rows = layout.rows
+    cols = layout.cols
+    rotation = layout.cell_rotation
+
+    if config.mode == ImpositionMode.step_and_repeat:
+        # Each sheet repeats a single source page
+        if config.duplex:
+            page_idx = (sheet_number - 1) * 2
+            if side == "back":
+                page_idx += 1
+        else:
+            page_idx = sheet_number - 1
+
+        if page_idx >= page_count:
+            page_idx = None
+
+        grid = []
+        for r in range(rows):
+            for c in range(cols):
+                grid.append(GridCell(row=r, col=c, page_index=page_idx, rotation=rotation))
+
+    elif config.mode == ImpositionMode.booklet_saddle_stitch:
+        sheets_data = get_saddle_stitch_sheets(page_count)
+        idx = min(sheet_number - 1, len(sheets_data) - 1)
+        pages = sheets_data[idx].get(side, sheets_data[idx]["front"])
+
+        grid = []
+        for i, pidx in enumerate(pages):
+            col = i % cols
+            row = i // cols
+            grid.append(GridCell(row=row, col=col, page_index=pidx, rotation=rotation))
+
+        # For back side of saddle stitch, mirror columns
+        if side == "back":
+            for cell in grid:
+                cell.col = (cols - 1) - cell.col
+
+    else:
+        # cut_and_stack / perfect_bind: sequential pages
+        if config.duplex:
+            pages_per_sheet = n_up * 2
+            start = (sheet_number - 1) * pages_per_sheet
+            if side == "front":
+                cursor = start
+            else:
+                cursor = start + n_up
+        else:
+            cursor = (sheet_number - 1) * n_up
+
+        grid = []
+        for r in range(rows):
+            for c in range(cols):
+                if cursor < page_count:
+                    grid.append(GridCell(row=r, col=c, page_index=cursor, rotation=rotation))
+                    cursor += 1
+                else:
+                    grid.append(GridCell(row=r, col=c, page_index=None, rotation=rotation))
+
+    # Apply duplex mirroring for back side (not saddle stitch, which handles its own mirroring)
+    if side == "back" and config.duplex and config.mode != ImpositionMode.booklet_saddle_stitch:
+        if config.flip_edge == FlipEdge.long:
+            for cell in grid:
+                cell.col = (cols - 1) - cell.col
+        elif config.flip_edge == FlipEdge.short:
+            for cell in grid:
+                cell.row = (rows - 1) - cell.row
+                cell.rotation = (cell.rotation + 180) % 360
+
+    return grid
 
 
 @app.get("/api/pdf/{session_id}")

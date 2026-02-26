@@ -70,7 +70,10 @@ def calculate_imposition_layout(
         pages_per_sheet = cells_per_sheet
 
     if config.mode == ImpositionMode.step_and_repeat:
-        total_sheets = 1
+        if config.duplex:
+            total_sheets = max(1, math.ceil(page_count / 2))
+        else:
+            total_sheets = max(1, page_count)
     else:
         total_sheets = max(1, math.ceil(page_count / pages_per_sheet))
 

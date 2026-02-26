@@ -14,7 +14,18 @@
       "Bash(node --version:*)",
       "Bash(npm:*)",
       "Bash(git init:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(gh auth:*)",
+      "Bash(gh repo create:*)",
+      "Bash(render:*)",
+      "Bash(git push:*)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(pip3 list:*)",
+      "Bash(/Users/riadzoabi/Developer/Imposer/backend/venv/bin/python3:*)",
+      "Bash(echo:*)",
+      "Bash(SID=\"8c723035-a3e5-4c40-bdf6-9972406acfe6\")",
+      "Bash(git checkout:*)"
     ]
   }
 }

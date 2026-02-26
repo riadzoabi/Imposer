@@ -74,7 +74,8 @@ function App() {
   const [error, setError] = useState('');
   const [showBleed, setShowBleed] = useState(true);
   const [showMarks, setShowMarks] = useState(true);
-  const [currentSheet, setCurrentSheet] = useState(0); // 0-based
+  const [currentSheet, setCurrentSheet] = useState(1);
+  const [currentSide, setCurrentSide] = useState<'front' | 'back'>('front');
 
   const pdfUrl = useMemo(
     () => (sessionId ? `/api/pdf/${sessionId}` : null),
@@ -102,12 +103,13 @@ function App() {
     }
   }, []);
 
-  // Reset sheet to 0 when config changes (layout may change)
+  // Reset sheet to 1 when config changes (but not when sheet/side nav changes)
   const prevConfigRef = useRef(config);
   useEffect(() => {
     if (prevConfigRef.current !== config) {
       prevConfigRef.current = config;
-      setCurrentSheet(0);
+      setCurrentSheet(1);
+      setCurrentSide('front');
     }
   }, [config]);
 
@@ -116,21 +118,21 @@ function App() {
     setLoading(true);
     setError('');
     try {
-      const data = await getPreview(sessionId, config, currentSheet);
+      const data = await getPreview(sessionId, config, currentSheet, currentSide);
       setPreview(data);
     } catch (e: any) {
       setError(e.message);
     } finally {
       setLoading(false);
     }
-  }, [sessionId, config, currentSheet]);
+  }, [sessionId, config, currentSheet, currentSide]);
 
   useEffect(() => {
     if (sessionId) {
       const timer = setTimeout(fetchPreview, 300);
       return () => clearTimeout(timer);
     }
-  }, [sessionId, config, currentSheet, fetchPreview]);
+  }, [sessionId, config, currentSheet, currentSide, fetchPreview]);
 
   const updateConfig = useCallback((patch: Partial<ImpositionConfig>) => {
     setConfig(prev => ({ ...prev, ...patch }));
@@ -364,12 +366,17 @@ function App() {
                     <span className="text-gray-400">
                       {preview.layout?.rows}&times;{preview.layout?.cols}
                     </span>
-                    <SheetNavigator
-                      currentSheet={currentSheet + 1}
-                      totalSheets={preview.layout?.total_sheets ?? 1}
-                      onNavigate={(sheet) => setCurrentSheet(sheet - 1)}
-                    />
                   </div>
+                )}
+                {preview && (
+                  <SheetNavigator
+                    currentSheet={currentSheet}
+                    totalSheets={preview.layout?.total_sheets || 1}
+                    onNavigate={setCurrentSheet}
+                    duplex={config.duplex}
+                    side={currentSide}
+                    onSideChange={setCurrentSide}
+                  />
                 )}
               </div>
               <div className="flex items-center gap-2">
