@@ -11,8 +11,18 @@ export async function uploadPDF(file: File): Promise<any> {
   return res.json();
 }
 
-export async function getPreview(sessionId: string, config: any, sheetNumber: number = 0): Promise<any> {
-  const res = await fetch(`${BASE}/preview?session_id=${sessionId}&sheet_number=${sheetNumber}`, {
+export async function getPreview(
+  sessionId: string,
+  config: any,
+  sheetNumber: number = 1,
+  side: string = 'front',
+): Promise<any> {
+  const params = new URLSearchParams({
+    session_id: sessionId,
+    sheet_number: String(sheetNumber),
+    side,
+  });
+  const res = await fetch(`${BASE}/preview?${params}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(config),
