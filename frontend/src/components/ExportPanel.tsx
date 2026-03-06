@@ -39,14 +39,22 @@ export default function ExportPanel({ sessionId, config, filename }: Props) {
     try {
       const blob = await imposePDF(sessionId, config);
       const url = URL.createObjectURL(blob);
-      const printWindow = window.open(url);
-      if (printWindow) {
-        printWindow.addEventListener('load', () => {
-          printWindow.print();
-        });
-      }
-      // Revoke after a delay to allow print dialog to use the blob
-      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      const iframe = document.createElement('iframe');
+      iframe.style.position = 'fixed';
+      iframe.style.left = '-9999px';
+      iframe.style.width = '0';
+      iframe.style.height = '0';
+      iframe.src = url;
+      document.body.appendChild(iframe);
+      iframe.onload = () => {
+        iframe.contentWindow?.focus();
+        iframe.contentWindow?.print();
+        // Clean up after giving time for the print dialog
+        setTimeout(() => {
+          document.body.removeChild(iframe);
+          URL.revokeObjectURL(url);
+        }, 60000);
+      };
     } catch (e: any) {
       setError(e.message);
     } finally {

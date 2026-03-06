@@ -8,6 +8,8 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs
 const MAX_THUMB_PX = 150;
 /** JPEG quality (0–1) */
 const JPEG_QUALITY = 0.6;
+/** Number of pages to render in parallel */
+const BATCH_SIZE = 4;
 
 export type ThumbnailMap = Record<number, string>; // pageIndex (0-based) -> dataURL
 
@@ -49,44 +51,43 @@ export function usePdfThumbnails(
 
         if (cancelRef.current !== genId) return;
 
-        // Create a reusable canvas for rendering
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d')!;
         const result: ThumbnailMap = {};
-
         const totalPages = Math.min(pdfDoc.numPages, pageCount);
 
-        for (let i = 0; i < totalPages; i++) {
-          if (cancelRef.current !== genId) return; // cancelled
-
-          const page = await pdfDoc.getPage(i + 1); // PDF.js is 1-indexed
+        // Render a single page on its own canvas
+        async function renderPage(i: number) {
+          const page = await pdfDoc!.getPage(i + 1);
           const viewport = page.getViewport({ scale: 1 });
-
-          // Calculate scale so longest side = MAX_THUMB_PX
           const longestSide = Math.max(viewport.width, viewport.height);
           const scale = MAX_THUMB_PX / longestSide;
           const thumbViewport = page.getViewport({ scale });
 
+          const canvas = document.createElement('canvas');
           canvas.width = Math.ceil(thumbViewport.width);
           canvas.height = Math.ceil(thumbViewport.height);
-
-          // White background (PDFs often have transparent bg)
+          const ctx = canvas.getContext('2d')!;
           ctx.fillStyle = '#ffffff';
           ctx.fillRect(0, 0, canvas.width, canvas.height);
 
           await page.render({ canvasContext: ctx, viewport: thumbViewport }).promise;
-
           result[i] = canvas.toDataURL('image/jpeg', JPEG_QUALITY);
           page.cleanup();
-
-          // Emit intermediate results every 4 pages so the UI updates progressively
-          if ((i + 1) % 4 === 0 && cancelRef.current === genId) {
-            setThumbnails({ ...result });
-          }
         }
 
-        if (cancelRef.current === genId) {
-          setThumbnails({ ...result });
+        // Process in parallel batches
+        for (let batch = 0; batch < totalPages; batch += BATCH_SIZE) {
+          if (cancelRef.current !== genId) return;
+
+          const batchEnd = Math.min(batch + BATCH_SIZE, totalPages);
+          const promises: Promise<void>[] = [];
+          for (let i = batch; i < batchEnd; i++) {
+            promises.push(renderPage(i));
+          }
+          await Promise.all(promises);
+
+          if (cancelRef.current === genId) {
+            setThumbnails({ ...result });
+          }
         }
       } catch (err) {
         console.warn('[usePdfThumbnails] Failed to generate thumbnails:', err);
