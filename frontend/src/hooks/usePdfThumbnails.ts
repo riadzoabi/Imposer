@@ -5,9 +5,9 @@ import * as pdfjsLib from 'pdfjs-dist';
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
 
 /** Max pixel dimension for thumbnail longest side */
-const MAX_THUMB_PX = 200;
+const MAX_THUMB_PX = 150;
 /** JPEG quality (0–1) */
-const JPEG_QUALITY = 0.55;
+const JPEG_QUALITY = 0.6;
 
 export type ThumbnailMap = Record<number, string>; // pageIndex (0-based) -> dataURL
 

@@ -84,7 +84,7 @@ export default function PageListSidebar({
     pageSequence.every((v, i) => v === i);
 
   return (
-    <div className="w-[180px] bg-white border-l border-gray-200 flex flex-col overflow-hidden">
+    <div className="w-[180px] h-full bg-white border-l border-gray-200 flex flex-col overflow-hidden">
       {/* Header */}
       <div className="px-3 py-2.5 border-b border-gray-200 flex items-center justify-between">
         <div>
