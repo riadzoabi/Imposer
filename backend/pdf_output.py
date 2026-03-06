@@ -30,7 +30,14 @@ def generate_imposed_pdf(
 
     # 1. Analyze input
     analysis = analyze_pdf(source_pdf_bytes)
-    page_count = analysis.page_count
+    source_page_count = analysis.page_count
+
+    # Use page_sequence if provided
+    page_seq = config.page_sequence
+    if page_seq is not None:
+        page_count = len(page_seq)
+    else:
+        page_count = source_page_count
 
     # 2. Determine trim and bleed
     trim_w = config.trim_width
@@ -86,19 +93,19 @@ def generate_imposed_pdf(
         _build_step_and_repeat(
             output_pdf, source_pdf, layout, config, analysis,
             effective_trim_w, effective_trim_h, trim_w, trim_h,
-            filename, page_count,
+            filename, page_count, page_seq,
         )
     elif config.mode == ImpositionMode.booklet_saddle_stitch:
         _build_saddle_stitch(
             output_pdf, source_pdf, layout, config, analysis,
             effective_trim_w, effective_trim_h, trim_w, trim_h,
-            filename, page_count,
+            filename, page_count, page_seq,
         )
     else:
         _build_sequential(
             output_pdf, source_pdf, layout, config, analysis,
             effective_trim_w, effective_trim_h, trim_w, trim_h,
-            filename, page_count,
+            filename, page_count, page_seq,
         )
 
     # Set metadata
@@ -116,10 +123,21 @@ def generate_imposed_pdf(
     return out_buf.read()
 
 
+def _remap_grid_page_indices(grid, page_seq):
+    """Remap grid cell page_index through page_sequence if provided."""
+    if page_seq is None:
+        return
+    for cell in grid:
+        if cell.page_index is not None and 0 <= cell.page_index < len(page_seq):
+            cell.page_index = page_seq[cell.page_index]
+        elif cell.page_index is not None:
+            cell.page_index = None
+
+
 def _build_step_and_repeat(
     output_pdf, source_pdf, layout, config, analysis,
     eff_trim_w, eff_trim_h, orig_trim_w, orig_trim_h,
-    filename, page_count,
+    filename, page_count, page_seq=None,
 ):
     """Build step-and-repeat imposition — one imposed sheet per source page.
     With duplex: pairs consecutive pages (front=page N, back=page N+1)."""
@@ -137,6 +155,8 @@ def _build_step_and_repeat(
                     GridCell(row=r, col=c, page_index=page_idx,
                              rotation=layout.cell_rotation)
                 )
+
+        _remap_grid_page_indices(front_grid, page_seq)
 
         calculate_per_cell_bleed(front_grid, layout, config.bleed, config.gap_between_items)
         calculate_cell_positions(
@@ -167,6 +187,8 @@ def _build_step_and_repeat(
                                  rotation=layout.cell_rotation)
                     )
 
+            _remap_grid_page_indices(back_grid, page_seq)
+
             # Mirror for duplex alignment
             back_grid_mirrored = create_duplex_back(
                 back_grid, layout, config, eff_trim_w, eff_trim_h
@@ -188,7 +210,7 @@ def _build_step_and_repeat(
 def _build_sequential(
     output_pdf, source_pdf, layout, config, analysis,
     eff_trim_w, eff_trim_h, orig_trim_w, orig_trim_h,
-    filename, page_count,
+    filename, page_count, page_seq=None,
 ):
     """Build cut-and-stack or perfect-bind imposition."""
     page_cursor = 0
@@ -211,6 +233,8 @@ def _build_sequential(
                         GridCell(row=r, col=c, page_index=None,
                                  rotation=layout.cell_rotation)
                     )
+
+        _remap_grid_page_indices(front_grid, page_seq)
 
         calculate_per_cell_bleed(front_grid, layout, config.bleed, config.gap_between_items)
         calculate_cell_positions(
@@ -244,6 +268,8 @@ def _build_sequential(
                                      rotation=layout.cell_rotation)
                         )
 
+            _remap_grid_page_indices(back_grid, page_seq)
+
             back_grid_mirrored = create_duplex_back(
                 back_grid, layout, config, eff_trim_w, eff_trim_h
             )
@@ -262,7 +288,7 @@ def _build_sequential(
 def _build_saddle_stitch(
     output_pdf, source_pdf, layout, config, analysis,
     eff_trim_w, eff_trim_h, orig_trim_w, orig_trim_h,
-    filename, page_count,
+    filename, page_count, page_seq=None,
 ):
     """Build saddle-stitch booklet imposition."""
     sheets_data = get_saddle_stitch_sheets(page_count)
@@ -277,6 +303,8 @@ def _build_saddle_stitch(
                 GridCell(row=row, col=col, page_index=pidx,
                          rotation=layout.cell_rotation)
             )
+
+        _remap_grid_page_indices(front_grid, page_seq)
 
         calculate_per_cell_bleed(front_grid, layout, config.bleed, config.gap_between_items)
         calculate_cell_positions(
@@ -303,6 +331,8 @@ def _build_saddle_stitch(
                 GridCell(row=row, col=col, page_index=pidx,
                          rotation=layout.cell_rotation)
             )
+
+        _remap_grid_page_indices(back_grid, page_seq)
 
         for cell in back_grid:
             cell.col = (layout.cols - 1) - cell.col

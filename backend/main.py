@@ -153,7 +153,14 @@ async def preview_imposition(
 
     session = _sessions[session_id]
     analysis = session["analysis"]
-    page_count = analysis.page_count
+    source_page_count = analysis.page_count
+
+    # Use page_sequence if provided, otherwise default sequential
+    page_seq = config.page_sequence
+    if page_seq is not None:
+        effective_page_count = len(page_seq)
+    else:
+        effective_page_count = source_page_count
 
     trim_w = config.trim_width
     trim_h = config.trim_height
@@ -167,7 +174,7 @@ async def preview_imposition(
             trim_h = analysis.pages[0].media_box.height
 
     try:
-        layout = calculate_imposition_layout(config, page_count)
+        layout = calculate_imposition_layout(config, effective_page_count)
     except Exception as e:
         raise HTTPException(400, str(e))
 
@@ -182,8 +189,16 @@ async def preview_imposition(
 
     # Build grid for the requested sheet and side
     grid = _build_preview_grid(
-        config, layout, page_count, sheet_number, side, eff_trim_w, eff_trim_h,
+        config, layout, effective_page_count, sheet_number, side, eff_trim_w, eff_trim_h,
     )
+
+    # Remap page indices through page_sequence
+    if page_seq is not None:
+        for cell in grid:
+            if cell.page_index is not None and 0 <= cell.page_index < len(page_seq):
+                cell.page_index = page_seq[cell.page_index]
+            elif cell.page_index is not None:
+                cell.page_index = None
 
     calculate_per_cell_bleed(grid, layout, config.bleed, config.gap_between_items)
     calculate_cell_positions(
@@ -210,7 +225,8 @@ async def preview_imposition(
         "sheet_height_mm": sheet_h,
         "effective_trim_w": eff_trim_w,
         "effective_trim_h": eff_trim_h,
-        "page_count": page_count,
+        "page_count": effective_page_count,
+        "source_page_count": source_page_count,
         "current_sheet": sheet_number,
         "current_side": side,
     }

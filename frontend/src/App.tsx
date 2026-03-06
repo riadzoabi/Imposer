@@ -6,6 +6,7 @@ import SheetPreview from './components/SheetPreview';
 import SheetNavigator from './components/SheetNavigator';
 import MarkSettings from './components/MarkSettings';
 import ExportPanel from './components/ExportPanel';
+import PageListSidebar from './components/PageListSidebar';
 
 import { UnitSystem } from './utils/unitConversion';
 import { getPreview } from './utils/api';
@@ -42,6 +43,7 @@ export interface ImpositionConfig {
   flip_edge: 'long' | 'short';
   auto_rotate: boolean;
   creep_adjustment: number;
+  page_sequence?: number[] | null;
 }
 
 const defaultConfig: ImpositionConfig = {
@@ -76,6 +78,7 @@ function App() {
   const [showMarks, setShowMarks] = useState(true);
   const [currentSheet, setCurrentSheet] = useState(1);
   const [currentSide, setCurrentSide] = useState<'front' | 'back'>('front');
+  const [pageSequence, setPageSequence] = useState<number[]>([]);
 
   const pdfUrl = useMemo(
     () => (sessionId ? `/api/pdf/${sessionId}` : null),
@@ -89,6 +92,7 @@ function App() {
     setFilename(data.filename);
     setAnalysis(data);
     setError('');
+    setPageSequence(Array.from({ length: data.page_count }, (_, i) => i));
 
     if (data.pages?.length > 0) {
       const pg = data.pages[0];
@@ -113,26 +117,33 @@ function App() {
     }
   }, [config]);
 
+  // Compute config with page_sequence for backend communication
+  const configWithSequence = useMemo(() => {
+    const isDefault = pageSequence.length === pageCount &&
+      pageSequence.every((v, i) => v === i);
+    return isDefault ? config : { ...config, page_sequence: pageSequence };
+  }, [config, pageSequence, pageCount]);
+
   const fetchPreview = useCallback(async () => {
     if (!sessionId) return;
     setLoading(true);
     setError('');
     try {
-      const data = await getPreview(sessionId, config, currentSheet, currentSide);
+      const data = await getPreview(sessionId, configWithSequence, currentSheet, currentSide);
       setPreview(data);
     } catch (e: any) {
       setError(e.message);
     } finally {
       setLoading(false);
     }
-  }, [sessionId, config, currentSheet, currentSide]);
+  }, [sessionId, configWithSequence, currentSheet, currentSide]);
 
   useEffect(() => {
     if (sessionId) {
       const timer = setTimeout(fetchPreview, 300);
       return () => clearTimeout(timer);
     }
-  }, [sessionId, config, currentSheet, currentSide, fetchPreview]);
+  }, [sessionId, configWithSequence, currentSheet, currentSide, fetchPreview]);
 
   const updateConfig = useCallback((patch: Partial<ImpositionConfig>) => {
     setConfig(prev => ({ ...prev, ...patch }));
@@ -380,11 +391,21 @@ function App() {
                 )}
               </div>
               <div className="flex items-center gap-2">
-                <ExportPanel sessionId={sessionId} config={config} filename={filename} />
+                <ExportPanel sessionId={sessionId} config={configWithSequence} filename={filename} />
               </div>
             </div>
           )}
         </div>
+
+        {/* Right Panel - Page List Sidebar */}
+        {sessionId && pageSequence.length > 0 && (
+          <PageListSidebar
+            pageSequence={pageSequence}
+            sourcePageCount={pageCount}
+            thumbnails={thumbnails}
+            onSequenceChange={setPageSequence}
+          />
+        )}
       </div>
     </div>
   );

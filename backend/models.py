@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, List
 from enum import Enum
 
 
@@ -104,6 +104,7 @@ class ImpositionConfig(BaseModel):
     flip_edge: FlipEdge = FlipEdge.long
     auto_rotate: bool = True
     creep_adjustment: float = 0.0
+    page_sequence: Optional[List[int]] = None
 
 
 class EdgeFlags(BaseModel):
