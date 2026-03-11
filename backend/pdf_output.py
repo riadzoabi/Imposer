@@ -9,6 +9,7 @@ from reportlab.lib.colors import CMYKColor
 from models import (
     ImpositionConfig,
     ImpositionMode,
+    ScaleMode,
     GridCell,
     BleedConfig,
     Rectangle,
@@ -479,69 +480,64 @@ def _assemble_pikepdf_sheet(
         clip_w = mm_to_pt(cell.clip_rect.width) if cell.clip_rect else target_trim_w_pt
         clip_h = mm_to_pt(cell.clip_rect.height) if cell.clip_rect else target_trim_h_pt
 
-        # Place content at 1:1 scale (no scaling).
-        # The clipping rect controls what's visible.
-        # The source trim origin is aligned to the target trim position.
-        # This preserves the original content size exactly — crop marks
-        # define where to cut, and clipping hides anything outside.
+        # Determine scale factor based on scale_mode.
+        # - none: 1:1 placement (clipping rect controls visibility)
+        # - fit_to_sheet: scale page to fit within full sheet dimensions
+        # - fit_to_trim: scale page to fit within the trim cell dimensions
         scale = 1.0
+        if config.scale_mode == ScaleMode.fit_to_sheet:
+            if src_trim_w > 0 and src_trim_h > 0:
+                scale = min(sheet_w_pt / src_trim_w, sheet_h_pt / src_trim_h)
+        elif config.scale_mode == ScaleMode.fit_to_trim:
+            if src_trim_w > 0 and src_trim_h > 0:
+                scale = min(target_trim_w_pt / src_trim_w,
+                            target_trim_h_pt / src_trim_h)
 
         # Build PDF content operation with clipping and transform
         if cell.rotation == 90:
-            # 90° CCW rotation matrix: [0, 1, -1, 0, tx, ty]
-            # After rotation, source X-axis becomes sheet Y-axis
-            # and source Y-axis becomes sheet negative-X-axis.
-            # Source trim origin needs to map to target trim origin.
-            # Rotated: point (sx, sy) -> (-sy, sx)
-            # With scale: (sx, sy) -> (-sy*s, sx*s)
-            # We need: src_trim_origin rotated+translated = target_trim_origin
-            # target_x = -src_trim_y * s + tx  => tx = target_x + src_trim_y
-            # target_y = src_trim_x * s + ty   => ty = target_y - src_trim_x
-            # But the cell on sheet is eff_trim_w wide x eff_trim_h tall
-            # and after rotation the source width goes into height direction.
-            # We shift by target_trim_w_pt to account for the rotation pivot.
-            rot_tx = target_x + src_trim_y + target_trim_w_pt
-            rot_ty = target_y - src_trim_x
+            # 90° CCW rotation matrix: [0, s, -s, 0, tx, ty]
+            rot_tx = target_x + src_trim_y * scale + target_trim_w_pt
+            rot_ty = target_y - src_trim_x * scale
             ops = (
                 f"q "
                 f"{clip_x:.4f} {clip_y:.4f} {clip_w:.4f} {clip_h:.4f} re W n "
-                f"0.000000 1.000000 "
-                f"-1.000000 0.000000 "
+                f"0.000000 {scale:.6f} "
+                f"-{scale:.6f} 0.000000 "
                 f"{rot_tx:.4f} {rot_ty:.4f} cm "
                 f"/{xobj_name} Do Q "
             )
         elif cell.rotation == 180:
-            # 180° rotation: [-1, 0, 0, -1, tx, ty]
-            rot_tx = target_x + src_trim_x + src_trim_w
-            rot_ty = target_y + src_trim_y + src_trim_h
+            # 180° rotation: [-s, 0, 0, -s, tx, ty]
+            rot_tx = target_x + src_trim_x * scale + src_trim_w * scale
+            rot_ty = target_y + src_trim_y * scale + src_trim_h * scale
             ops = (
                 f"q "
                 f"{clip_x:.4f} {clip_y:.4f} {clip_w:.4f} {clip_h:.4f} re W n "
-                f"-1.000000 0 0 -1.000000 "
+                f"-{scale:.6f} 0 0 -{scale:.6f} "
                 f"{rot_tx:.4f} {rot_ty:.4f} cm "
                 f"/{xobj_name} Do Q "
             )
         elif cell.rotation == 270:
-            # 270° CCW (= 90° CW): [0, -1, 1, 0, tx, ty]
-            rot_tx = target_x - src_trim_y
-            rot_ty = target_y + src_trim_x + target_trim_h_pt
+            # 270° CCW (= 90° CW): [0, -s, s, 0, tx, ty]
+            rot_tx = target_x - src_trim_y * scale
+            rot_ty = target_y + src_trim_x * scale + target_trim_h_pt
             ops = (
                 f"q "
                 f"{clip_x:.4f} {clip_y:.4f} {clip_w:.4f} {clip_h:.4f} re W n "
-                f"0.000000 -1.000000 "
-                f"1.000000 0.000000 "
+                f"0.000000 -{scale:.6f} "
+                f"{scale:.6f} 0.000000 "
                 f"{rot_tx:.4f} {rot_ty:.4f} cm "
                 f"/{xobj_name} Do Q "
             )
         else:
-            # No rotation: [1, 0, 0, 1, tx, ty]
+            # No rotation: [s, 0, 0, s, tx, ty]
             # Align source trim origin to target position
-            tx = target_x - src_trim_x
-            ty = target_y - src_trim_y
+            tx = target_x - src_trim_x * scale
+            ty = target_y - src_trim_y * scale
             ops = (
                 f"q "
                 f"{clip_x:.4f} {clip_y:.4f} {clip_w:.4f} {clip_h:.4f} re W n "
-                f"1.000000 0 0 1.000000 {tx:.4f} {ty:.4f} cm "
+                f"{scale:.6f} 0 0 {scale:.6f} {tx:.4f} {ty:.4f} cm "
                 f"/{xobj_name} Do Q "
             )
 
