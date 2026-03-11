@@ -92,6 +92,12 @@ class FlipEdge(str, Enum):
     short = "short"
 
 
+class ScaleMode(str, Enum):
+    none = "none"
+    fit_to_sheet = "fit_to_sheet"
+    fit_to_trim = "fit_to_trim"
+
+
 class ImpositionConfig(BaseModel):
     mode: ImpositionMode = ImpositionMode.step_and_repeat
     trim_width: float = 90.0
@@ -105,6 +111,7 @@ class ImpositionConfig(BaseModel):
     auto_rotate: bool = True
     creep_adjustment: float = 0.0
     page_sequence: Optional[List[int]] = None
+    scale_mode: ScaleMode = ScaleMode.none
 
 
 class EdgeFlags(BaseModel):

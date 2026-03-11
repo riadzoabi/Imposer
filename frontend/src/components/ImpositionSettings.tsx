@@ -1,4 +1,4 @@
-import { ImpositionConfig, BleedConfig, SheetConfig } from '../App';
+import { ImpositionConfig, BleedConfig, SheetConfig, ScaleMode } from '../App';
 import { UnitSystem, fromMM, toMM } from '../utils/unitConversion';
 
 interface Props {
@@ -53,6 +53,19 @@ export default function ImpositionSettings({
           />
           Auto-rotate for best fit
         </label>
+
+        <div>
+          <label className={labelClass}>Scale Mode</label>
+          <select
+            value={config.scale_mode}
+            onChange={e => updateConfig({ scale_mode: e.target.value as ScaleMode })}
+            className={selectClass}
+          >
+            <option value="none">No Scaling (1:1)</option>
+            <option value="fit_to_sheet">Fit to Sheet</option>
+            <option value="fit_to_trim">Fit to Trim</option>
+          </select>
+        </div>
       </div>
 
       {/* Sheet Size */}

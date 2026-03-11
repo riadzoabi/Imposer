@@ -32,6 +32,7 @@ export interface SheetConfig {
   orientation: 'portrait' | 'landscape';
   grip_edge: number; mark_margin: number;
 }
+export type ScaleMode = 'none' | 'fit_to_sheet' | 'fit_to_trim';
 export interface ImpositionConfig {
   mode: string;
   trim_width: number; trim_height: number;
@@ -44,6 +45,7 @@ export interface ImpositionConfig {
   auto_rotate: boolean;
   creep_adjustment: number;
   page_sequence?: number[] | null;
+  scale_mode: ScaleMode;
 }
 
 const defaultConfig: ImpositionConfig = {
@@ -63,6 +65,7 @@ const defaultConfig: ImpositionConfig = {
   },
   gap_between_items: 0,
   duplex: false, flip_edge: 'long', auto_rotate: true, creep_adjustment: 0,
+  scale_mode: 'none',
 };
 
 function App() {
