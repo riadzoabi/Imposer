@@ -1,9 +1,22 @@
 const BASE = '/api';
 
+function authHeaders(): Record<string, string> {
+  const token = localStorage.getItem('auth_token');
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return headers;
+}
+
 export async function uploadPDF(file: File): Promise<any> {
   const form = new FormData();
   form.append('file', file);
-  const res = await fetch(`${BASE}/upload`, { method: 'POST', body: form });
+  const res = await fetch(`${BASE}/upload`, {
+    method: 'POST',
+    body: form,
+    headers: authHeaders(),
+  });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
     throw new Error(err.detail || 'Upload failed');
@@ -24,7 +37,7 @@ export async function getPreview(
   });
   const res = await fetch(`${BASE}/preview?${params}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify(config),
   });
   if (!res.ok) {
@@ -37,7 +50,7 @@ export async function getPreview(
 export async function imposePDF(sessionId: string, config: any): Promise<Blob> {
   const res = await fetch(`${BASE}/impose?session_id=${sessionId}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify(config),
   });
   if (!res.ok) {
@@ -60,7 +73,7 @@ export async function getPreset(id: string): Promise<any> {
 export async function savePreset(name: string, config: any): Promise<any> {
   const res = await fetch(`${BASE}/presets/save`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify({ name, config }),
   });
   return res.json();
