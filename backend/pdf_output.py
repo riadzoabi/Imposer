@@ -527,11 +527,17 @@ def _assemble_pikepdf_sheet(
                 scale = min(target_trim_w_pt / src_trim_w,
                             target_trim_h_pt / src_trim_h)
 
+        # Centering offsets for scaled content within the trim cell
+        scaled_w = src_trim_w * scale
+        scaled_h = src_trim_h * scale
+
         # Build PDF content operation with clipping and transform
         if cell.rotation == 90:
-            # 90° CCW rotation matrix: [0, s, -s, 0, tx, ty]
-            rot_tx = target_x + src_trim_y * scale + target_trim_w_pt
-            rot_ty = target_y - src_trim_x * scale
+            # 90° CCW: source W maps to cell H, source H maps to cell W
+            center_x = (target_trim_w_pt - scaled_h) / 2
+            center_y = (target_trim_h_pt - scaled_w) / 2
+            rot_tx = target_x + center_x + src_trim_y * scale + scaled_h
+            rot_ty = target_y + center_y - src_trim_x * scale
             ops = (
                 f"q "
                 f"{clip_x:.4f} {clip_y:.4f} {clip_w:.4f} {clip_h:.4f} re W n "
@@ -542,8 +548,10 @@ def _assemble_pikepdf_sheet(
             )
         elif cell.rotation == 180:
             # 180° rotation: [-s, 0, 0, -s, tx, ty]
-            rot_tx = target_x + src_trim_x * scale + src_trim_w * scale
-            rot_ty = target_y + src_trim_y * scale + src_trim_h * scale
+            center_x = (target_trim_w_pt - scaled_w) / 2
+            center_y = (target_trim_h_pt - scaled_h) / 2
+            rot_tx = target_x + center_x + src_trim_x * scale + scaled_w
+            rot_ty = target_y + center_y + src_trim_y * scale + scaled_h
             ops = (
                 f"q "
                 f"{clip_x:.4f} {clip_y:.4f} {clip_w:.4f} {clip_h:.4f} re W n "
@@ -552,9 +560,11 @@ def _assemble_pikepdf_sheet(
                 f"/{xobj_name} Do Q "
             )
         elif cell.rotation == 270:
-            # 270° CCW (= 90° CW): [0, -s, s, 0, tx, ty]
-            rot_tx = target_x - src_trim_y * scale
-            rot_ty = target_y + src_trim_x * scale + target_trim_h_pt
+            # 270° CCW (= 90° CW): source W maps to cell H, source H maps to cell W
+            center_x = (target_trim_w_pt - scaled_h) / 2
+            center_y = (target_trim_h_pt - scaled_w) / 2
+            rot_tx = target_x + center_x - src_trim_y * scale
+            rot_ty = target_y + center_y + src_trim_x * scale + scaled_w
             ops = (
                 f"q "
                 f"{clip_x:.4f} {clip_y:.4f} {clip_w:.4f} {clip_h:.4f} re W n "
@@ -565,9 +575,13 @@ def _assemble_pikepdf_sheet(
             )
         else:
             # No rotation: [s, 0, 0, s, tx, ty]
-            # Align source trim origin to target position
-            tx = target_x - src_trim_x * scale
-            ty = target_y - src_trim_y * scale
+            # Align source trim origin to target position, centered in cell
+            scaled_w = src_trim_w * scale
+            scaled_h = src_trim_h * scale
+            offset_x = (target_trim_w_pt - scaled_w) / 2
+            offset_y = (target_trim_h_pt - scaled_h) / 2
+            tx = target_x + offset_x - src_trim_x * scale
+            ty = target_y + offset_y - src_trim_y * scale
             ops = (
                 f"q "
                 f"{clip_x:.4f} {clip_y:.4f} {clip_w:.4f} {clip_h:.4f} re W n "
