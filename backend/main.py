@@ -4,10 +4,11 @@ import tempfile
 import uuid
 from pathlib import Path
 
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel as PydanticBaseModel
 import io
 
 from models import (
@@ -27,6 +28,12 @@ from imposition_engine import calculate_imposition_layout, get_saddle_stitch_she
 from bleed_manager import calculate_per_cell_bleed, calculate_cell_positions
 from mark_placer import place_all_marks
 from pdf_output import generate_imposed_pdf
+from auth import register_user, login_user, logout_user, validate_token, get_user_devices, remove_device
+from auth_middleware import require_auth, require_subscription_dep
+from subscription import (
+    get_active_subscription, check_device_limit, create_checkout_session,
+    cancel_subscription, PLANS,
+)
 
 app = FastAPI(title="Print Imposition System", version="1.0.0")
 
@@ -102,8 +109,118 @@ BUILTIN_PRESETS = {
 }
 
 
+# ── Auth request models ─────────────────────────────────────────────
+
+class RegisterRequest(PydanticBaseModel):
+    email: str
+    password: str
+
+class LoginRequest(PydanticBaseModel):
+    email: str
+    password: str
+    device_fingerprint: str
+    device_name: str = "Browser"
+
+class CheckoutRequest(PydanticBaseModel):
+    plan: str = "pro"
+    billing_cycle: str = "monthly"
+
+
+# ── Auth endpoints ──────────────────────────────────────────────────
+
+@app.post("/api/auth/register")
+async def api_register(req: RegisterRequest):
+    """Create a new user account."""
+    try:
+        result = register_user(req.email, req.password)
+        return result
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/auth/login")
+async def api_login(req: LoginRequest):
+    """Log in and receive a session token (7-day expiry)."""
+    try:
+        result = login_user(req.email, req.password, req.device_fingerprint, req.device_name)
+        return result
+    except ValueError as e:
+        raise HTTPException(401, str(e))
+
+
+@app.post("/api/auth/logout")
+async def api_logout(user: dict = Depends(require_auth)):
+    """Revoke the current session token."""
+    logout_user(user["token"])
+    return {"status": "logged_out"}
+
+
+@app.get("/api/auth/me")
+async def api_me(user: dict = Depends(require_auth)):
+    """Return current user info, subscription, and device status."""
+    sub = get_active_subscription(user["user_id"])
+    device_check = check_device_limit(user["user_id"])
+    devices = get_user_devices(user["user_id"])
+
+    return {
+        "user": {"id": user["user_id"], "email": user["email"]},
+        "subscription": sub,
+        "devices": devices,
+        "device_limit": device_check,
+    }
+
+
+@app.get("/api/auth/devices")
+async def api_devices(user: dict = Depends(require_auth)):
+    """List all registered devices for the current user."""
+    return {"devices": get_user_devices(user["user_id"])}
+
+
+@app.delete("/api/auth/devices/{device_id}")
+async def api_remove_device(device_id: int, user: dict = Depends(require_auth)):
+    """Remove a device and revoke its sessions."""
+    remove_device(user["user_id"], device_id)
+    return {"status": "removed"}
+
+
+# ── Subscription endpoints ──────────────────────────────────────────
+
+@app.get("/api/subscription/plans")
+async def api_plans():
+    """Return available subscription plans."""
+    return {"plans": PLANS}
+
+
+@app.post("/api/subscription/checkout")
+async def api_checkout(req: CheckoutRequest, user: dict = Depends(require_auth)):
+    """
+    PLACEHOLDER: Create a payment checkout session.
+    In development, this auto-activates the subscription.
+    In production, replace with Stripe/Paddle redirect.
+    """
+    result = create_checkout_session(user["user_id"], req.plan, req.billing_cycle)
+    return result
+
+
+@app.post("/api/subscription/cancel")
+async def api_cancel(user: dict = Depends(require_auth)):
+    """Cancel the user's active subscription."""
+    cancel_subscription(user["user_id"])
+    return {"status": "cancelled"}
+
+
+@app.get("/api/subscription/status")
+async def api_sub_status(user: dict = Depends(require_auth)):
+    """Return current subscription status."""
+    sub = get_active_subscription(user["user_id"])
+    device_check = check_device_limit(user["user_id"])
+    return {"subscription": sub, "device_limit": device_check}
+
+
+# ── Protected imposition endpoints ──────────────────────────────────
+
 @app.post("/api/upload")
-async def upload_pdf(file: UploadFile = File(...)):
+async def upload_pdf(file: UploadFile = File(...), user: dict = Depends(require_subscription_dep)):
     """Upload a PDF and analyze its geometry."""
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(400, "Only PDF files are accepted.")
@@ -146,6 +263,7 @@ async def preview_imposition(
     config: ImpositionConfig,
     sheet_number: int = 1,
     side: str = "front",
+    user: dict = Depends(require_subscription_dep),
 ):
     """Calculate and return layout preview data for a specific sheet/side."""
     if session_id not in _sessions:
@@ -321,7 +439,7 @@ def _build_preview_grid(
 
 
 @app.get("/api/pdf/{session_id}")
-async def get_pdf(session_id: str):
+async def get_pdf(session_id: str, user: dict = Depends(require_auth)):
     """Serve the uploaded PDF bytes so the frontend can render thumbnails."""
     if session_id not in _sessions:
         raise HTTPException(404, "Session not found.")
@@ -335,7 +453,7 @@ async def get_pdf(session_id: str):
 
 
 @app.post("/api/impose")
-async def impose_pdf(session_id: str, config: ImpositionConfig):
+async def impose_pdf(session_id: str, config: ImpositionConfig, user: dict = Depends(require_subscription_dep)):
     """Run full imposition pipeline and return imposed PDF."""
     if session_id not in _sessions:
         raise HTTPException(404, "Session not found. Please re-upload the PDF.")
@@ -363,7 +481,7 @@ async def impose_pdf(session_id: str, config: ImpositionConfig):
 
 
 @app.post("/api/presets/save")
-async def save_preset(preset: PresetConfig):
+async def save_preset(preset: PresetConfig, user: dict = Depends(require_auth)):
     """Save an imposition preset."""
     safe_name = "".join(
         c if c.isalnum() or c in "-_ " else "" for c in preset.name
