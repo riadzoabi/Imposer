@@ -40,8 +40,10 @@ from contextlib import asynccontextmanager
 
 @asynccontextmanager
 async def lifespan(app):
-    # Seed dummy users on startup (DB is ephemeral on Render free tier)
+    # Clean up expired sessions and stale devices, then seed dummy users
+    from database import cleanup_expired
     from seed_users import seed
+    cleanup_expired()
     seed()
     yield
 
