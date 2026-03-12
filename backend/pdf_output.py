@@ -44,13 +44,18 @@ def generate_imposed_pdf(
     trim_w = config.trim_width
     trim_h = config.trim_height
 
+    # Get source page dimensions
+    source_w = trim_w
+    source_h = trim_h
+    if analysis.pages:
+        pg = analysis.pages[0]
+        src_box = pg.trim_box or pg.media_box
+        source_w = src_box.width
+        source_h = src_box.height
+
     if trim_w == 0 or trim_h == 0:
-        if analysis.pages and analysis.pages[0].trim_box:
-            trim_w = analysis.pages[0].trim_box.width
-            trim_h = analysis.pages[0].trim_box.height
-        elif analysis.pages:
-            trim_w = analysis.pages[0].media_box.width
-            trim_h = analysis.pages[0].media_box.height
+        trim_w = source_w
+        trim_h = source_h
 
     bleed = config.bleed
 
@@ -61,6 +66,37 @@ def generate_imposed_pdf(
         sheet_w, sheet_h = sheet_h, sheet_w
     elif config.sheet.orientation == "portrait" and sheet_w > sheet_h:
         sheet_w, sheet_h = sheet_h, sheet_w
+
+    # For fit_to_sheet: expand trim cells to fill the available sheet area
+    if config.scale_mode == ScaleMode.fit_to_sheet:
+        layout = calculate_imposition_layout(config, page_count)
+        mark_margin = config.sheet.mark_margin
+        grip = config.sheet.grip_edge
+        avail_w = sheet_w - 2 * mark_margin
+        avail_h = sheet_h - 2 * mark_margin - grip
+
+        rows = layout.rows
+        cols = layout.cols
+
+        if config.gap_between_items == 0:
+            max_trim_w = (avail_w - bleed.left - bleed.right) / max(cols, 1)
+            max_trim_h = (avail_h - bleed.top - bleed.bottom) / max(rows, 1)
+        else:
+            gap = config.gap_between_items
+            max_trim_w = (avail_w / max(cols, 1)) - bleed.left - bleed.right - gap
+            max_trim_h = (avail_h / max(rows, 1)) - bleed.top - bleed.bottom - gap
+
+        if layout.cell_rotation == 90:
+            scale_fit = min(max_trim_w / source_h, max_trim_h / source_w) if source_w > 0 and source_h > 0 else 1.0
+            trim_w = source_h * scale_fit
+            trim_h = source_w * scale_fit
+        else:
+            scale_fit = min(max_trim_w / source_w, max_trim_h / source_h) if source_w > 0 and source_h > 0 else 1.0
+            trim_w = source_w * scale_fit
+            trim_h = source_h * scale_fit
+
+        # Recalculate layout with expanded trim
+        config = config.model_copy(update={"trim_width": trim_w, "trim_height": trim_h})
 
     if trim_w + bleed.left + bleed.right > sheet_w:
         raise ValueError(
@@ -482,13 +518,11 @@ def _assemble_pikepdf_sheet(
 
         # Determine scale factor based on scale_mode.
         # - none: 1:1 placement (clipping rect controls visibility)
-        # - fit_to_sheet: scale page to fit within full sheet dimensions
+        # - fit_to_sheet: trim was already expanded to fill sheet; scale
+        #   source page to fit the (larger) trim cell
         # - fit_to_trim: scale page to fit within the trim cell dimensions
         scale = 1.0
-        if config.scale_mode == ScaleMode.fit_to_sheet:
-            if src_trim_w > 0 and src_trim_h > 0:
-                scale = min(sheet_w_pt / src_trim_w, sheet_h_pt / src_trim_h)
-        elif config.scale_mode == ScaleMode.fit_to_trim:
+        if config.scale_mode in (ScaleMode.fit_to_sheet, ScaleMode.fit_to_trim):
             if src_trim_w > 0 and src_trim_h > 0:
                 scale = min(target_trim_w_pt / src_trim_w,
                             target_trim_h_pt / src_trim_h)

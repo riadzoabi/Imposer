@@ -22,6 +22,7 @@ from models import (
     MarkConfig,
     SheetConfig,
     GridCell,
+    ScaleMode,
 )
 from pdf_analyzer import analyze_pdf
 from imposition_engine import calculate_imposition_layout, get_saddle_stitch_sheets
@@ -283,24 +284,93 @@ async def preview_imposition(
     trim_w = config.trim_width
     trim_h = config.trim_height
 
-    if trim_w == 0 or trim_h == 0:
-        if analysis.pages and analysis.pages[0].trim_box:
-            trim_w = analysis.pages[0].trim_box.width
-            trim_h = analysis.pages[0].trim_box.height
-        elif analysis.pages:
-            trim_w = analysis.pages[0].media_box.width
-            trim_h = analysis.pages[0].media_box.height
+    # Get source page dimensions for scale calculations
+    source_w = trim_w
+    source_h = trim_h
+    if analysis.pages:
+        pg = analysis.pages[0]
+        src_box = pg.trim_box or pg.media_box
+        source_w = src_box.width
+        source_h = src_box.height
 
-    try:
-        layout = calculate_imposition_layout(config, effective_page_count)
-    except Exception as e:
-        raise HTTPException(400, str(e))
+    if trim_w == 0 or trim_h == 0:
+        trim_w = source_w
+        trim_h = source_h
+
+    # For fit_to_sheet: first calculate layout with current trim to get grid
+    # dimensions, then expand trim to fill available sheet area
+    if config.scale_mode == ScaleMode.fit_to_sheet:
+        try:
+            layout = calculate_imposition_layout(config, effective_page_count)
+        except Exception as e:
+            raise HTTPException(400, str(e))
+
+        sheet_w = config.sheet.sheet_width
+        sheet_h = config.sheet.sheet_height
+        if config.sheet.orientation == "landscape" and sheet_w < sheet_h:
+            sheet_w, sheet_h = sheet_h, sheet_w
+        elif config.sheet.orientation == "portrait" and sheet_w > sheet_h:
+            sheet_w, sheet_h = sheet_h, sheet_w
+
+        mark_margin = config.sheet.mark_margin
+        grip = config.sheet.grip_edge
+        avail_w = sheet_w - 2 * mark_margin
+        avail_h = sheet_h - 2 * mark_margin - grip
+
+        rows = layout.rows
+        cols = layout.cols
+
+        if config.gap_between_items == 0:
+            # Tight packing: outer bleed + cols*trim = avail
+            max_trim_w = (avail_w - config.bleed.left - config.bleed.right) / max(cols, 1)
+            max_trim_h = (avail_h - config.bleed.top - config.bleed.bottom) / max(rows, 1)
+        else:
+            gap = config.gap_between_items
+            max_trim_w = (avail_w / max(cols, 1)) - config.bleed.left - config.bleed.right - gap
+            max_trim_h = (avail_h / max(rows, 1)) - config.bleed.top - config.bleed.bottom - gap
+
+        # Scale source proportionally to fit within max cell
+        if layout.cell_rotation == 90:
+            scale_fit = min(max_trim_w / source_h, max_trim_h / source_w) if source_w > 0 and source_h > 0 else 1.0
+            trim_w = source_h * scale_fit
+            trim_h = source_w * scale_fit
+        else:
+            scale_fit = min(max_trim_w / source_w, max_trim_h / source_h) if source_w > 0 and source_h > 0 else 1.0
+            trim_w = source_w * scale_fit
+            trim_h = source_h * scale_fit
+
+        # Recalculate layout with new trim sizes
+        config_copy = config.model_copy(update={"trim_width": trim_w, "trim_height": trim_h})
+        try:
+            layout = calculate_imposition_layout(config_copy, effective_page_count)
+        except Exception as e:
+            raise HTTPException(400, str(e))
+    else:
+        try:
+            layout = calculate_imposition_layout(config, effective_page_count)
+        except Exception as e:
+            raise HTTPException(400, str(e))
 
     eff_trim_w = trim_w
     eff_trim_h = trim_h
     if layout.cell_rotation == 90:
         eff_trim_w = trim_h
         eff_trim_h = trim_w
+
+    # Compute scale factor for preview rendering
+    scale_factor = 1.0
+    if config.scale_mode == ScaleMode.fit_to_trim:
+        if layout.cell_rotation == 90:
+            scale_factor = min(eff_trim_w / source_h, eff_trim_h / source_w) if source_w > 0 and source_h > 0 else 1.0
+        else:
+            scale_factor = min(eff_trim_w / source_w, eff_trim_h / source_h) if source_w > 0 and source_h > 0 else 1.0
+    elif config.scale_mode == ScaleMode.fit_to_sheet:
+        # For fit_to_sheet the trim was already expanded to fill the sheet,
+        # so scale_factor reflects that expansion from original source size
+        if layout.cell_rotation == 90:
+            scale_factor = min(eff_trim_w / source_h, eff_trim_h / source_w) if source_w > 0 and source_h > 0 else 1.0
+        else:
+            scale_factor = min(eff_trim_w / source_w, eff_trim_h / source_h) if source_w > 0 and source_h > 0 else 1.0
 
     # Clamp sheet_number
     sheet_number = max(1, min(sheet_number, layout.total_sheets))
@@ -347,6 +417,10 @@ async def preview_imposition(
         "source_page_count": source_page_count,
         "current_sheet": sheet_number,
         "current_side": side,
+        "scale_mode": config.scale_mode.value,
+        "scale_factor": round(scale_factor, 6),
+        "source_page_w": source_w,
+        "source_page_h": source_h,
     }
 
 
