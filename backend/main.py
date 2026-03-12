@@ -36,7 +36,16 @@ from subscription import (
     cancel_subscription, PLANS,
 )
 
-app = FastAPI(title="Print Imposition System", version="1.0.0")
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app):
+    # Seed dummy users on startup (DB is ephemeral on Render free tier)
+    from seed_users import seed
+    seed()
+    yield
+
+app = FastAPI(title="Print Imposition System", version="1.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
