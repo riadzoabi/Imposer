@@ -64,8 +64,11 @@ def check_device_limit(user_id: int) -> dict:
     max_devices = plan["max_devices"]
 
     with get_db() as conn:
+        # Only count devices with active sessions (not stale ones)
         count = conn.execute(
-            "SELECT COUNT(*) as cnt FROM devices WHERE user_id = ?",
+            """SELECT COUNT(DISTINCT d.id) as cnt FROM devices d
+               INNER JOIN sessions s ON s.device_id = d.id AND s.user_id = d.user_id
+               WHERE d.user_id = ? AND s.expires_at > datetime('now')""",
             (user_id,),
         ).fetchone()["cnt"]
 

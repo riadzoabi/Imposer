@@ -73,6 +73,18 @@ def init_db():
         conn.executescript(SCHEMA)
 
 
+def cleanup_expired():
+    """Remove expired sessions and devices with no active sessions."""
+    with get_db() as conn:
+        conn.execute("DELETE FROM sessions WHERE expires_at < datetime('now')")
+        conn.execute(
+            """DELETE FROM devices WHERE id NOT IN (
+                SELECT DISTINCT device_id FROM sessions
+                WHERE device_id IS NOT NULL AND expires_at > datetime('now')
+            )"""
+        )
+
+
 @contextmanager
 def get_db():
     """Yield a SQLite connection with row_factory set to dict-like rows."""
