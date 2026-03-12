@@ -14,6 +14,11 @@ frontend/dist/
 .idea/
 *.swp
 
+# Database
+*.db
+*.db-wal
+*.db-shm
+
 # OS
 .DS_Store
 Thumbs.db
