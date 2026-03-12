@@ -7,7 +7,10 @@ import SheetNavigator from './components/SheetNavigator';
 import MarkSettings from './components/MarkSettings';
 import ExportPanel from './components/ExportPanel';
 import PageListSidebar from './components/PageListSidebar';
+import LoginPage from './components/LoginPage';
+import SubscriptionBanner from './components/SubscriptionBanner';
 
+import { useAuth } from './contexts/AuthContext';
 import { UnitSystem } from './utils/unitConversion';
 import { getPreview } from './utils/api';
 import { usePdfThumbnails } from './hooks/usePdfThumbnails';
@@ -69,6 +72,30 @@ const defaultConfig: ImpositionConfig = {
 };
 
 function App() {
+  const { isAuthenticated, isSubscribed, loading: authLoading, user, logout, subscription } = useAuth();
+
+  // Auth gate: show login page if not authenticated
+  if (authLoading) {
+    return (
+      <div className="h-screen flex items-center justify-center bg-gray-50">
+        <div className="animate-spin w-8 h-8 border-2 border-gray-200 border-t-brand-cyan rounded-full" />
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <LoginPage />;
+  }
+
+  if (!isSubscribed) {
+    return <SubscriptionBanner />;
+  }
+
+  return <AppMain />;
+}
+
+function AppMain() {
+  const { user, logout, subscription } = useAuth();
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [filename, setFilename] = useState('');
   const [analysis, setAnalysis] = useState<any>(null);
@@ -194,21 +221,39 @@ function App() {
             )}
           </div>
         </div>
-        <div className="flex items-center gap-1.5">
-          <span className="text-[11px] text-gray-500 mr-1">Units:</span>
-          {(['mm', 'inches', 'points'] as UnitSystem[]).map(u => (
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5">
+            <span className="text-[11px] text-gray-500 mr-1">Units:</span>
+            {(['mm', 'inches', 'points'] as UnitSystem[]).map(u => (
+              <button
+                key={u}
+                onClick={() => setUnit(u)}
+                className={`px-2.5 py-1 text-[11px] rounded-md font-medium transition-all ${
+                  unit === u
+                    ? 'bg-brand-cyan text-white'
+                    : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                }`}
+              >
+                {u}
+              </button>
+            ))}
+          </div>
+
+          {/* User menu */}
+          <div className="flex items-center gap-2 pl-3 border-l border-gray-200">
+            <span className="text-[11px] text-gray-400">{user?.email}</span>
+            {subscription && (
+              <span className="text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded-full bg-brand-cyan/10 text-brand-cyan">
+                {subscription.plan}
+              </span>
+            )}
             <button
-              key={u}
-              onClick={() => setUnit(u)}
-              className={`px-2.5 py-1 text-[11px] rounded-md font-medium transition-all ${
-                unit === u
-                  ? 'bg-brand-cyan text-white'
-                  : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-              }`}
+              onClick={logout}
+              className="text-[11px] text-gray-400 hover:text-red-500 transition-colors"
             >
-              {u}
+              Sign out
             </button>
-          ))}
+          </div>
         </div>
       </header>
 
