@@ -46,7 +46,15 @@ export function usePdfThumbnails(
       setThumbnails({});
 
       try {
-        const loadingTask = pdfjsLib.getDocument({ url: pdfUrl!, cMapPacked: true });
+        // Fetch PDF with auth headers, then pass data to pdfjs
+        const token = localStorage.getItem('auth_token');
+        const fetchHeaders: Record<string, string> = {};
+        if (token) fetchHeaders['Authorization'] = `Bearer ${token}`;
+        const pdfResponse = await fetch(pdfUrl!, { headers: fetchHeaders });
+        if (!pdfResponse.ok) throw new Error(`PDF fetch failed: ${pdfResponse.status}`);
+        const pdfData = new Uint8Array(await pdfResponse.arrayBuffer());
+
+        const loadingTask = pdfjsLib.getDocument({ data: pdfData, cMapPacked: true });
         pdfDoc = await loadingTask.promise;
 
         if (cancelRef.current !== genId) return;
