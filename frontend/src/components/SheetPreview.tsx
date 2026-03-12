@@ -24,6 +24,19 @@ export default function SheetPreview({ preview, config, showBleed, showMarks, lo
     const trimH = preview.effective_trim_h || config.trim_height;
     const grid = preview.grid || [];
     const marks = preview.marks || [];
+    const scaleMode = preview.scale_mode || 'none';
+    const scaleFactor = preview.scale_factor || 1.0;
+    const srcW = preview.source_page_w || trimW;
+    const srcH = preview.source_page_h || trimH;
+
+    // For fit_to_trim: compute the actual rendered size of the source page
+    // within the trim cell (may be letterboxed)
+    let thumbW = trimW;
+    let thumbH = trimH;
+    if (scaleMode === 'fit_to_trim' && scaleFactor !== 1.0) {
+      thumbW = srcW * scaleFactor;
+      thumbH = srcH * scaleFactor;
+    }
 
     return (
       <svg
@@ -105,11 +118,11 @@ export default function SheetPreview({ preview, config, showBleed, showMarks, lo
               {thumb && (
                 <image
                   href={thumb}
-                  x={tx}
-                  y={ty}
-                  width={trimW}
-                  height={trimH}
-                  preserveAspectRatio="xMidYMid slice"
+                  x={tx + (trimW - thumbW) / 2}
+                  y={ty + (trimH - thumbH) / 2}
+                  width={thumbW}
+                  height={thumbH}
+                  preserveAspectRatio={scaleMode !== 'none' ? 'xMidYMid meet' : 'xMidYMid slice'}
                   clipPath={`url(#cell-clip-${i})`}
                   opacity={isHovered ? 0.85 : 1}
                   style={{ pointerEvents: 'none' }}
